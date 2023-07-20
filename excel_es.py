@@ -4,6 +4,9 @@ import base64
 import pandas as pd
 import streamlit as st
 import io
+from openpyxl import Workbook
+from openpyxl.utils.dataframe import dataframe_to_rows
+
 
 def generar_link_descarga(df):
     """
@@ -11,14 +14,15 @@ def generar_link_descarga(df):
     in:  dataframe
     out: string href
     """
-    csv = df.to_csv(index=False)
-    b64 = base64.b64encode(csv.encode()).decode()  # algunas conversiones de cadenas <-> bytes necesarias aquí
+    csv = df.to_csv(index=False, encoding='utf-8-sig')
+    b64 = base64.b64encode(csv.encode('utf-8-sig')).decode()  # some string <-> bytes conversions necessary here
     href = f'<a href="data:file/csv;base64,{b64}" download="datos_procesados.csv">Descargar Datos Procesados</a>'
     return href
 
+
 # Inicialización del DataFrame
 def init_df():
-    Estructura_Tabla_Datos = pd.DataFrame({
+    Tabla_Estructura_Datos = pd.DataFrame({
         'SUBHOLDING':[
             'CORP-ESP', 'SPW', 'AGR SAP', 'AGR', 'MEXICO', 'NEO', 'ROKAS', 'IIC', 'INMOB'],
         'Filas_Inicio_Eliminadas':[
@@ -41,27 +45,28 @@ def init_df():
             [], ['Pagos(Ámbito-Subholding)', 'Pagos(Ámbito-Área/Negocio)'], [], [], ['Pagos(Ámbito-Subholding)','Pagos(Ámbito-Área/Negocio)','Nombre','Usuario','Pagos(SÍ/NO)','Pagos(Tipo)','Garantías'], [], ['Pagos(Ámbito-Subholding)'], [], ['Pagos(Ámbito-Subholding)', 'Pagos(Ámbito-Área/Negocio)']],
     })
 
-    return Estructura_Tabla_Datos
 
-def procesar_excel(Estructura_Tabla_Datos, RUTA_ARCHIVO):
+    return Tabla_Estructura_Datos
+
+def procesar_excel(Tabla_Estructura_Datos, RUTA_ARCHIVO):
     Datos= pd.read_excel(RUTA_ARCHIVO, sheet_name=None, header=None)
     DataFrames= []
     for Hoja, data in Datos.items():
         Hojas_Excluir=['VW', 'AGR SAP', 'Tipo-Subtipo de pago', 'Ámbito']
         if Hoja in Hojas_Excluir:
             continue
-        Filas_INICIO_Eliminar= Estructura_Tabla_Datos.loc[Estructura_Tabla_Datos['SUBHOLDING']==Hoja, 'Filas_Inicio_Eliminadas'].item()
+        Filas_INICIO_Eliminar= Tabla_Estructura_Datos.loc[Tabla_Estructura_Datos['SUBHOLDING']==Hoja, 'Filas_Inicio_Eliminadas'].item()
         data= data.drop(index=range(Filas_INICIO_Eliminar))
-        Filas_FINAL_Eliminar= Estructura_Tabla_Datos.loc[Estructura_Tabla_Datos['SUBHOLDING']==Hoja, 'Filas_Final_Eliminadas'].item()
+        Filas_FINAL_Eliminar= Tabla_Estructura_Datos.loc[Tabla_Estructura_Datos['SUBHOLDING']==Hoja, 'Filas_Final_Eliminadas'].item()
         data= data.drop(data.tail(Filas_FINAL_Eliminar).index).reset_index(drop=True)
-        data.columns= Estructura_Tabla_Datos.loc[Estructura_Tabla_Datos['SUBHOLDING']==Hoja, 'Cabecera'].item()
+        data.columns= Tabla_Estructura_Datos.loc[Tabla_Estructura_Datos['SUBHOLDING']==Hoja, 'Cabecera'].item()
         data['Usuario']= data['Usuario'].astype(str).str.extract(r'(\d+)', expand=False)
-        def extraer_subcadenas(cadena_entrada):
-            cuatro_digitos_str= re.findall(r'\d{4}', str(cadena_entrada))
-            p_dos_digitos_str= re.findall(r'P\d{2}', str(cadena_entrada))
+        def extract_substrings(input_str):
+            cuatro_digitos_str= re.findall(r'\d{4}', str(input_str))
+            p_dos_digitos_str= re.findall(r'P\d{2}', str(input_str))
             return ', '.join(cuatro_digitos_str + p_dos_digitos_str)
         if Hoja=='AGR':
-            data['Pagos(Tipo)']= data['Pagos(Límite Máximo)'].apply(extraer_subcadenas)
+            data['Pagos(Tipo)']= data['Pagos(Límite Máximo)'].apply(extract_substrings)
         if 'Pagos(SÍ/NO)' in data.columns:
             data['Pagos(SÍ/NO)'] = data['Pagos(SÍ/NO)'].apply(lambda x: 'SI' if str(x).replace(" ", "").replace("'", "") == 'SI' or str(x).replace(" ", "").replace("'", "") == 'SÍ' or x == 1 else 'NO')
         if 'Garantías' in data.columns:
@@ -77,10 +82,9 @@ def procesar_excel(Estructura_Tabla_Datos, RUTA_ARCHIVO):
         data['Nombre Hoja']= Hoja
         DataFrames.append(data)
     Columnas_UNION= ['Nombre Hoja', 'Usuario', 'Nombre', 'Pagos(SÍ/NO)', 'Pagos(Tipo)', 'Pagos(Ámbito-Área/Negocio)', 'Pagos Confidenciales', 'Garantías', 'Pagos(Ámbito)', 'Pagos(Límite Máximo)']
-    UNION= pd.concat([df[Columnas_UNION] for df in DataFrames], ignore_index=True)
-    UNION.to_excel('Hojas_unidas_y_procesadas.xlsx', index=False, sheet_name='Hojas_Unificadas')
+    UNION = pd.concat([df[Columnas_UNION] for df in DataFrames], ignore_index=True)
+    UNION.to_excel('Hojas_unidas_y_procesadas.xlsx', index=False)
     return UNION
-
 # Initialize the dataframe and display it using st.experimental_data_editor
 df = init_df()
 
@@ -111,6 +115,4 @@ if ruta_archivo is not None:
         st.sidebar.markdown(generar_link_descarga(datos_procesados), unsafe_allow_html=True)
 else:
     st.warning("Por favor, sube un archivo Excel para continuar.")
-
-
 
